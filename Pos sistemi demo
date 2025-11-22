@@ -1,0 +1,93 @@
+import sys
+import sqlite3
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QLineEdit, QTableWidget, QTableWidgetItem, QLabel
+)
+
+class AnaPencere(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("POS Sistemi")
+        self.setGeometry(100, 100, 800, 600)
+
+        # Veritabanı bağlantısı
+        self.conn = sqlite3.connect("pos_veritabani.db")
+        self.cursor = self.conn.cursor()
+        self.tablolari_olustur()
+        self.test_urunlerini_ekle()
+
+        # Arayüz
+        self.merkez = QWidget()
+        self.setCentralWidget(self.merkez)
+        self.layout = QVBoxLayout(self.merkez)
+
+        self.barkod_input = QLineEdit()
+        self.barkod_input.setPlaceholderText("Barkod girin (örn: 1001)")
+        self.barkod_input.returnPressed.connect(self.urun_ekle)
+        self.layout.addWidget(self.barkod_input)
+
+        self.tablo = QTableWidget()
+        self.tablo.setColumnCount(4)
+        self.tablo.setHorizontalHeaderLabels(["Ürün", "Miktar", "Fiyat", "Tutar"])
+        self.layout.addWidget(self.tablo)
+
+        self.toplam_label = QLabel("Toplam: 0.00 TL")
+        self.layout.addWidget(self.toplam_label)
+
+    def tablolari_olustur(self):
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS urunler (
+                barkod TEXT PRIMARY KEY,
+                urun_adi TEXT,
+                fiyat REAL,
+                stok INTEGER
+            )
+        """)
+        self.conn.commit()
+
+    def test_urunlerini_ekle(self):
+        urunler = [
+            ("1001", "FABER-CASTELL KALEM", 25.50, 100),
+            ("2002", "KIRMIZI DEFTER A4", 45.00, 50),
+            ("3003", "SIVI YAPIŞTIRICI 100ml", 12.75, 200)
+        ]
+        for barkod, ad, fiyat, stok in urunler:
+            self.cursor.execute("SELECT barkod FROM urunler WHERE barkod=?", (barkod,))
+            if self.cursor.fetchone() is None:
+                self.cursor.execute("INSERT INTO urunler VALUES (?, ?, ?, ?)", (barkod, ad, fiyat, stok))
+        self.conn.commit()
+
+    def urun_ekle(self):
+        barkod = self.barkod_input.text().strip()
+        self.barkod_input.clear()
+        if not barkod:
+            return
+
+        self.cursor.execute("SELECT urun_adi, fiyat FROM urunler WHERE barkod=?", (barkod,))
+        sonuc = self.cursor.fetchone()
+        if sonuc:
+            urun_adi, fiyat = sonuc
+            satir = self.tablo.rowCount()
+            self.tablo.insertRow(satir)
+            miktar = 1
+            tutar = fiyat * miktar
+            self.tablo.setItem(satir, 0, QTableWidgetItem(urun_adi))
+            self.tablo.setItem(satir, 1, QTableWidgetItem(str(miktar)))
+            self.tablo.setItem(satir, 2, QTableWidgetItem(f"{fiyat:.2f}"))
+            self.tablo.setItem(satir, 3, QTableWidgetItem(f"{tutar:.2f}"))
+            self.toplami_guncelle()
+
+    def toplami_guncelle(self):
+        toplam = 0.0
+        for i in range(self.tablo.rowCount()):
+            item = self.tablo.item(i, 3)
+            if item:
+                toplam += float(item.text())
+        self.toplam_label.setText(f"Toplam: {toplam:.2f} TL")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    pencere = AnaPencere()
+    pencere.show()
+    sys.exit(app.exec())
